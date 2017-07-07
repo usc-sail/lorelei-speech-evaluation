@@ -60,8 +60,7 @@ json_schema = """
 						"Terrorism or other Extreme Violence",
 						"Urgent Rescue",
 						"Utilities, Energy, or Sanitation",
-						"Water Supply",
-						"in-domain" ] },
+						"Water Supply"] },
 	      "TypeConfidence": { "type": "number", "minimum": 0, "maximum": 1 },
 	      "PlaceMention": { "type": "string" },
 	      "Status": {
