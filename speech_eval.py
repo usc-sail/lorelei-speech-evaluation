@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-__author__ = "Nikolaos Malandrakis (malandra@usc.edu)"
-__version__ = "$Revision: 5 $"
-__date__ = "$Date: 07/06/2017$"
+__author__ = "Nikolaos Malandrakis (malandra@usc.edu), Oleg Aulov"
+__version__ = "$Revision: 6 $"
+__date__ = "$Date: 11/22/2017$"
 
 import os
 import sys
@@ -185,10 +185,17 @@ def frame_similarity(frame1,frame2):
 	similarity = 1
 	if 'Type' in frame1:
 		if frame1['Type'] != frame2['Type']:
-			similarity = 0
+			similarity = 0.0
 	if similarity == 1:
 		if 'PlaceMention' in frame1:
-			similarity = Levenshtein.ratio(frame1['PlaceMention'], frame2['PlaceMention'])
+			# if PlaceMention is normalized use simple string comparison
+			if not Levenshtein_arg:
+				if frame1['PlaceMention']  != frame2['PlaceMention']:
+					similarity = 0.0
+			else:
+				# PlaceMention is not normalized so use Levinshtein distance
+				similarity = Levenshtein.ratio(frame1['PlaceMention'], frame2['PlaceMention'])
+	#print("similarity: ", similarity)
 	return similarity
 
 
@@ -405,6 +412,15 @@ def get_complete_output(reference_frames,output_frames,mode,pr_resolution,outdir
 
 
 
+def normalize_placementions(frames):
+	for i in range(len(frames)):
+		if "PlaceMention" in frames[i]:
+			#print("PLACE:    ", type(myframe["PlaceMention"]) ,myframe["PlaceMention"])
+			if frames[i]["PlaceMention"].strip().lower() in acdict:
+				#print("Normalizing: ",myframe["PlaceMention"], "   to:   ", acdict[myframe["PlaceMention"].lower()])
+				frames[i]["PlaceMention"] = acdict[frames[i]["PlaceMention"].lower()]
+	return frames
+
 
 ################################################################################
 # MAIN
@@ -420,13 +436,19 @@ if __name__ == "__main__":
 		parser.add_argument('-s', '--system-output', help='Path to the system output', required=True)
 		parser.add_argument('-g', '--ground-truth', help='Path to the ground truth directory', required=True)
 		parser.add_argument('-o', '--output-directory', help='Path to save the evaluation output', required=True)
+		parser.add_argument('-d', '--autocorrect-dict', help='Path to the dictionary file for autocorrect', required=False)
+		parser.add_argument('-L', '--Levenshtein', help='Use Levenshtein distance for Place Mention matching', required=False, default="True", choices=['True', 'False'])
+		
 
 		args = parser.parse_args()
-#		print (args)
+		print (args)
 
 		ref_dir  = args.ground_truth
 		test_file = args.system_output
 		outdir = args.output_directory
+		acdict_file = args.autocorrect_dict
+		Levenshtein_arg = True if args.Levenshtein == "True" else False
+		print("Levinstein is: ", str(Levenshtein_arg)) 
 		pr_resolution = 100 # points used to approximate the PR curve
 	else:
 		ref_dir  = 'ground_truth'
@@ -439,6 +461,18 @@ if __name__ == "__main__":
 		if not os.path.exists(outdir): os.makedirs(outdir) 
 	except:
 		sys.exit('CAN NOT CREATE OUTPUT DIRECTORY: '+outdir)
+
+	# read in autocorrect dictionary
+	if acdict_file:
+		print("Reading dictionary file...")
+		if not os.path.exists(acdict_file):
+			sys.exit('PATH NOT FOUND: '+acdict_file)
+		with open(acdict_file) as fin:
+			rows = ( line.split('\t') for line in fin )
+			acdict = { row[0].strip().lower():row[1].strip().lower() for row in rows }
+			#print(acdict)
+	else:
+		print("no acdict argument")
 
 	# multi-processing pool
 	pool = multiprocessing.Pool(8)
@@ -456,6 +490,13 @@ if __name__ == "__main__":
 	schema, types, times, resolutions = parse_schema()
 	# load the ground truth
 	input_files,reference_frames,rejected_files_list = parse_ground_truth(ref_dir)
+
+
+	# Normalize reference PlaceMention field using dictionary file
+	if acdict_file:
+		reference_frames = normalize_placementions(reference_frames)
+
+
 	# load test file
 	fp = codecs.open(test_file, "r", "utf-8")
 	output_frames = json.load(fp)
@@ -468,6 +509,11 @@ if __name__ == "__main__":
 		print (e.message)
 	except jsonschema.SchemaError as e:
 		print (e)
+
+	# Normalize output PlaceMention field using dictionary file
+	if acdict_file:
+		print("Dictionary file provided. Normalizing PlaceMention field...")
+		output_frames = normalize_placementions(output_frames)
 
 	# remove location entries from any frame of a rejected document
 	for i in range(len(output_frames)):
